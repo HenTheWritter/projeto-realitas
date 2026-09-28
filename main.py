@@ -1,6 +1,9 @@
 # ENTREGA 2: ATRIBUTOS
 # ENTREGA 3: CLASSES, NEX, RECURSOS AUTOMÁTICOS E AFINIDADE
 # ENTREGA 4: PERICIAS
+# ENTREGA 5: DEFESA, LIMITE DE ITENS E INVENTÁRIO
+# ENTREGA 6:
+# ENTREGA 7: 
 
 import os
 from datetime import date
@@ -8,6 +11,8 @@ import pandas as pd
 from persistencia import (
     ARQUIVO_PERSONAGENS,
     ARQUIVO_USUARIOS,
+    ARQUIVO_ITENS,
+    ARQUIVO_INVENTARIO,
     carregar_tabela,
     inicializar_banco,
     salvar_tabela,
@@ -101,6 +106,12 @@ def calcular_recursos(classe, nex, vig, pre):
     return pv, san, pe
 
 
+def calcular_defesa_limite(agi, forca):
+    defesa = 10 + agi
+    limite_itens = forca * 5
+    return defesa, limite_itens
+
+
 def validar_atributos_ordem(nex):
     pontos_totais = 9
     if nex >= 20: pontos_totais += 1
@@ -139,15 +150,27 @@ def validar_atributos_ordem(nex):
         except ValueError:
             print("[ERRO] Digite apenas números inteiros.\n")
 
+
+def imprimir_lista_numerada(pericias, elegiveis):
+    linhas = []
+    for i, p in enumerate(elegiveis, start=1):
+        valor = pericias[p]
+        nome_fmt = p.capitalize().ljust(14)
+        texto_valor = f"+{valor}" if valor > 0 else "0"
+        linhas.append(f"[{i:>2}] {nome_fmt}{texto_valor.rjust(3)}")
+
+    colunas = 3
+    for i in range(0, len(linhas), colunas):
+        print(" | ".join(linhas[i:i + colunas]))
+
+
 def distribuir_pericias(classe, nex, inte):
-    """ Gerencia a distribuição das perícias (+5, +10, +15) """
     pericias = {p: 0 for p in LISTA_PERICIAS}
     
     print(f"\n--- TREINAMENTO DE PERÍCIAS (INT: {inte}) ---")
     
     qtd_escolhas = 0
     
-    # 1. PERÍCIAS INICIAIS (Treinadas: +5)
     if classe == "Ocultista":
         print("Ocultistas recebem +5 em Ocultismo e Vontade automaticamente.")
         pericias["ocultismo"] = 5
@@ -175,39 +198,61 @@ def distribuir_pericias(classe, nex, inte):
         
     elif classe == "Mundano":
         qtd_escolhas = 2 + inte
-        
+
     def escolher_da_lista(quantidade, valor_alvo, mensagem):
         escolhidas = 0
-        
-        # Filtra apenas as perícias válidas para este grau
+
         validas = [p for p, v in pericias.items() if (valor_alvo == 5 and v == 0) or (valor_alvo == 10 and v == 5) or (valor_alvo == 15 and v == 10)]
-        
-        # Trava de segurança: Se a quantidade de opções que ele pode melhorar for menor que a quantidade de pontos
+
         if len(validas) < quantidade:
             print(f"Aviso: Você tem {quantidade} opções para melhorar, mas só {len(validas)} perícias estão disponíveis nesse grau!")
-            quantidade = len(validas) # Limita a quantidade
+            quantidade = len(validas)
 
         while escolhidas < quantidade:
-            print(f"\n{mensagem} ({quantidade - escolhidas} restantes):")
-            
-            # Recalcula as válidas para tirar da lista o que já foi escolhido no loop atual
             validas_agora = [p for p, v in pericias.items() if (valor_alvo == 5 and v == 0) or (valor_alvo == 10 and v == 5) or (valor_alvo == 15 and v == 10)]
-            print("Opções: " + ", ".join(validas_agora[:10]) + ("..." if len(validas_agora) > 10 else ""))
-            
-            escolha = input("Digite o nome exato da perícia: ").strip().lower()
-            
-            if escolha in validas_agora:
-                pericias[escolha] = valor_alvo
-                escolhidas += 1
-                print(f"{escolha.capitalize()} evoluída para +{valor_alvo}!")
-            else:
-                print(f"[ERRO] Perícia '{escolha}' inválida ou já foi treinada nesse grau.")
 
-    # Distribui +5
+            print(f"\n{mensagem} ({quantidade - escolhidas} restantes):")
+            imprimir_lista_numerada(pericias, validas_agora)
+
+            escolha = input("Digite o NÚMERO da perícia: ").strip()
+
+            if not escolha.isdigit() or not (1 <= int(escolha) <= len(validas_agora)):
+                print(f"[ERRO] Número inválido. Escolha um valor entre 1 e {len(validas_agora)}.")
+                continue
+
+            nome_pericia = validas_agora[int(escolha) - 1]
+            pericias[nome_pericia] = valor_alvo
+            escolhidas += 1
+            print(f"{nome_pericia.capitalize()} evoluída para +{valor_alvo}!")
+
+    def escolher_evolucao_flexivel(quantidade, teto, mensagem):
+        escolhidas = 0
+        while escolhidas < quantidade:
+            elegiveis = [p for p, v in pericias.items() if v < teto]
+
+            if not elegiveis:
+                print("Não há mais perícias elegíveis para evoluir nesse marco.")
+                break
+
+            print(f"\n{mensagem} ({quantidade - escolhidas} restantes):")
+            imprimir_lista_numerada(pericias, elegiveis)
+            print(" -> Escolha uma perícia no grau 0 para TREINAR, ou uma já treinada para EVOLUIR (+5 no grau atual).")
+
+            escolha = input("Digite o NÚMERO da perícia: ").strip()
+
+            if not escolha.isdigit() or not (1 <= int(escolha) <= len(elegiveis)):
+                print(f"[ERRO] Número inválido. Escolha um valor entre 1 e {len(elegiveis)}.")
+                continue
+
+            nome_pericia = elegiveis[int(escolha) - 1]
+            novo_valor = pericias[nome_pericia] + 5
+            pericias[nome_pericia] = novo_valor
+            escolhidas += 1
+            print(f"{nome_pericia.capitalize()} evoluída para +{novo_valor}!")
+
     if qtd_escolhas > 0:
         escolher_da_lista(qtd_escolhas, 5, "Escolha perícias para ficar Treinado (+5)")
 
-    # Calcula quantas perícias a classe pode evoluir (Veterano/Expert)
     qtd_evolucao = 0
     if classe == "Combatente":
         qtd_evolucao = 2 + inte
@@ -216,15 +261,13 @@ def distribuir_pericias(classe, nex, inte):
     elif classe == "Especialista":
         qtd_evolucao = 5 + inte
 
-    # Distribui +10 (Veterano)
     if nex >= 35 and qtd_evolucao > 0:
-        print(f"\nNEX {nex}%: Você pode escolher {qtd_evolucao} perícias Treinadas para virar Veterano (+10).")
-        escolher_da_lista(qtd_evolucao, 10, "Escolha perícias para ficar Veterano (+10)")
-        
-    # Distribui +15 (Expert)
+        print(f"\nNEX {nex}%: Você tem {qtd_evolucao} ponto(s) para treinar perícias novas ou evoluir para Veterano (+10).")
+        escolher_evolucao_flexivel(qtd_evolucao, 10, "Escolha uma perícia para treinar ou evoluir")
+
     if nex >= 70 and qtd_evolucao > 0:
-        print(f"\nNEX {nex}%: Você pode escolher {qtd_evolucao} perícias Veteranas para virar Expert (+15).")
-        escolher_da_lista(qtd_evolucao, 15, "Escolha perícias para ficar Expert (+15)")
+        print(f"\nNEX {nex}%: Você tem {qtd_evolucao} ponto(s) para treinar perícias novas ou evoluir até Expert (+15).")
+        escolher_evolucao_flexivel(qtd_evolucao, 15, "Escolha uma perícia para treinar ou evoluir")
 
     print("\nPerícias distribuídas com sucesso!")
     return pericias
@@ -390,8 +433,8 @@ def cadastrar_personagem(usuario_logado):
 
     agi, forca, inte, pre, vig = validar_atributos_ordem(nex)
     pv, san, pe = calcular_recursos(classe, nex, vig, pre)
+    defesa, limite_itens = calcular_defesa_limite(agi, forca)
     
-    # Chama a função de perícias
     pericias_dict = distribuir_pericias(classe, nex, inte)
 
     df_pers = carregar_tabela(ARQUIVO_PERSONAGENS)
@@ -402,12 +445,219 @@ def cadastrar_personagem(usuario_logado):
         "classe": classe, "NEX": nex, "afinidade": afinidade,
         "AGI": agi, "FOR": forca, "INT": inte, "PRE": pre, "VIG": vig,
         "pvATUAL": pv, "pvMAX": pv, "sanATUAL": san, "sanMAX": san, "peATUAL": pe, "peMAX": pe,
-        **pericias_dict # Desempacota o dicionário de perícias direto aqui
+        "defesa": defesa, "limiteItens": limite_itens,
+        **pericias_dict 
     }
 
     df_pers = pd.concat([df_pers, pd.DataFrame([novo_pers])], ignore_index=True)
     if salvar_tabela(df_pers, ARQUIVO_PERSONAGENS):
-        print(f"\n[OK] Agente '{nome}' salvo com sucesso! (PV: {pv} | SAN: {san} | PE: {pe})")
+        print(f"\n[OK] Agente '{nome}' salvo com sucesso! (PV: {pv} | SAN: {san} | PE: {pe} | Defesa: {defesa} | Limite de Itens: {limite_itens})")
+
+
+# ======================================================
+# FUNÇÕES DE ITENS / INVENTÁRIO
+# ======================================================
+
+def calcular_peso_total(id_personagem):
+    df_inv = carregar_tabela(ARQUIVO_INVENTARIO)
+    df_itens = carregar_tabela(ARQUIVO_ITENS)
+
+    if df_inv.empty or df_itens.empty:
+        return 0.0
+
+    inv_pers = df_inv[df_inv["id_personagem"].astype(int) == int(id_personagem)]
+    if inv_pers.empty:
+        return 0.0
+
+    total = 0.0
+    for _, linha in inv_pers.iterrows():
+        item_row = df_itens[df_itens["id"].astype(int) == int(linha["id_item"])]
+        if not item_row.empty:
+            peso_unit = float(item_row.iloc[0]["peso"])
+            total += peso_unit * float(linha["quantidade"])
+    return total
+
+
+def exibir_inventario(id_personagem, limite_itens):
+    df_inv = carregar_tabela(ARQUIVO_INVENTARIO)
+    df_itens = carregar_tabela(ARQUIVO_ITENS)
+
+    peso_total = calcular_peso_total(id_personagem)
+    print("-" * 70)
+    print(f" INVENTÁRIO (Carga: {peso_total:g} / {limite_itens}):")
+
+    if df_inv.empty or df_itens.empty:
+        print("   (Mochila vazia)")
+        return
+
+    inv_pers = df_inv[df_inv["id_personagem"].astype(int) == int(id_personagem)]
+    if inv_pers.empty:
+        print("   (Mochila vazia)")
+        return
+
+    for _, linha in inv_pers.iterrows():
+        item_row = df_itens[df_itens["id"].astype(int) == int(linha["id_item"])]
+        if item_row.empty:
+            continue
+        item = item_row.iloc[0]
+        qtd = float(linha["quantidade"])
+        peso_unit = float(item["peso"])
+        print(f"   - {item['nome']} (x{qtd:g}) | Peso unit.: {peso_unit:g} | Subtotal: {qtd * peso_unit:g}")
+
+
+def adicionar_item_inventario(id_personagem, limite_itens):
+    df_itens = carregar_tabela(ARQUIVO_ITENS)
+    if df_itens.empty:
+        print("[ERRO] O catálogo de itens ainda está vazio.")
+        return
+
+    df_itens = df_itens.reset_index(drop=True)
+
+    print("\n--- CATÁLOGO DE ITENS ---")
+    for i, linha in df_itens.iterrows():
+        nome_fmt = str(linha["nome"]).ljust(26)
+        tipo = str(linha.get("tipoItem", "-")).ljust(11)
+        peso_txt = f"Peso:{linha['peso']}".ljust(8)
+
+        extra = ""
+        dano = linha.get("dano")
+        if pd.notna(dano) and str(dano).strip() not in ("", "-", "nan"):
+            extra += f" Dano:{dano}"
+            critico = linha.get("critico")
+            if pd.notna(critico) and str(critico).strip() not in ("", "-", "nan"):
+                extra += f" Crít:{critico}"
+            alcance = linha.get("alcance")
+            if pd.notna(alcance) and str(alcance).strip() not in ("", "-", "nan"):
+                extra += f" Alc:{alcance}"
+        defesa = linha.get("defesa")
+        if pd.notna(defesa) and str(defesa).strip() not in ("", "-", "nan"):
+            extra += f" Defesa:{defesa}"
+
+        print(f"[{i + 1:>2}] {nome_fmt}{tipo}{peso_txt}{extra}")
+
+    escolha = input("\nDigite o NÚMERO do item (ou 0 para cancelar): ").strip()
+    if escolha == "0":
+        return
+    if not escolha.isdigit() or not (1 <= int(escolha) <= len(df_itens)):
+        print("[ERRO] Número inválido.")
+        return
+
+    item = df_itens.iloc[int(escolha) - 1]
+    peso_unit = float(item["peso"])
+
+    try:
+        qtd = float(input(f"Quantidade de '{item['nome']}' a adicionar: ").strip())
+        if qtd <= 0:
+            print("[ERRO] A quantidade deve ser maior que zero.")
+            return
+    except ValueError:
+        print("[ERRO] Digite um número válido.")
+        return
+
+    peso_atual = calcular_peso_total(id_personagem)
+    peso_novo = peso_atual + (qtd * peso_unit)
+
+    if peso_novo > limite_itens:
+        print(f"[ERRO] Isso ultrapassa seu Limite de Itens! (Carga resultante: {peso_novo:g} / {limite_itens})")
+        return
+
+    df_inv = carregar_tabela(ARQUIVO_INVENTARIO)
+    if not df_inv.empty:
+        mask = (df_inv["id_personagem"].astype(int) == int(id_personagem)) & (df_inv["id_item"].astype(int) == int(item["id"]))
+    else:
+        mask = pd.Series([], dtype=bool)
+
+    if not df_inv.empty and mask.any():
+        df_inv.loc[mask, "quantidade"] = df_inv.loc[mask, "quantidade"].astype(float) + qtd
+    else:
+        novo_id = 1 if df_inv.empty else int(df_inv["id"].max()) + 1
+        novo_reg = {"id": novo_id, "id_personagem": int(id_personagem), "id_item": int(item["id"]), "quantidade": qtd}
+        df_inv = pd.concat([df_inv, pd.DataFrame([novo_reg])], ignore_index=True)
+
+    if salvar_tabela(df_inv, ARQUIVO_INVENTARIO):
+        print(f"[OK] {qtd:g}x '{item['nome']}' adicionado(s)! (Carga: {peso_novo:g} / {limite_itens})")
+
+
+def remover_item_inventario(id_personagem):
+    df_inv = carregar_tabela(ARQUIVO_INVENTARIO)
+    df_itens = carregar_tabela(ARQUIVO_ITENS)
+
+    if df_inv.empty:
+        print("[ERRO] Mochila vazia.")
+        return
+
+    inv_pers = df_inv[df_inv["id_personagem"].astype(int) == int(id_personagem)].reset_index(drop=True)
+    if inv_pers.empty:
+        print("[ERRO] Mochila vazia.")
+        return
+
+    print("\n--- ITENS NA MOCHILA ---")
+    for i, linha in inv_pers.iterrows():
+        item_row = df_itens[df_itens["id"].astype(int) == int(linha["id_item"])] if not df_itens.empty else pd.DataFrame()
+        nome = item_row.iloc[0]["nome"] if not item_row.empty else f"Item #{linha['id_item']}"
+        print(f"[{i + 1:>2}] {nome} (x{float(linha['quantidade']):g})")
+
+    escolha = input("\nDigite o NÚMERO do item a remover (ou 0 para cancelar): ").strip()
+    if escolha == "0":
+        return
+    if not escolha.isdigit() or not (1 <= int(escolha) <= len(inv_pers)):
+        print("[ERRO] Número inválido.")
+        return
+
+    linha_escolhida = inv_pers.iloc[int(escolha) - 1]
+    qtd_atual = float(linha_escolhida["quantidade"])
+
+    entrada = input(f"Quantidade a remover (atual: {qtd_atual:g}, ENTER = remover tudo): ").strip()
+    try:
+        qtd_remover = float(entrada) if entrada else qtd_atual
+    except ValueError:
+        print("[ERRO] Digite um número válido.")
+        return
+
+    if qtd_remover <= 0:
+        print("[ERRO] Quantidade inválida.")
+        return
+
+    if qtd_remover >= qtd_atual:
+        df_inv = df_inv[df_inv["id"].astype(int) != int(linha_escolhida["id"])]
+        print("[OK] Item removido da mochila.")
+    else:
+        mask = df_inv["id"].astype(int) == int(linha_escolhida["id"])
+        df_inv.loc[mask, "quantidade"] = qtd_atual - qtd_remover
+        print(f"[OK] Quantidade atualizada para {qtd_atual - qtd_remover:g}.")
+
+    salvar_tabela(df_inv, ARQUIVO_INVENTARIO)
+
+
+def gerenciar_inventario(id_personagem):
+    while True:
+        df_pers = carregar_tabela(ARQUIVO_PERSONAGENS)
+        linha_pers = df_pers[df_pers["id"].astype(int) == int(id_personagem)]
+        if linha_pers.empty:
+            break
+        personagem = linha_pers.iloc[0].to_dict()
+
+        try:
+            limite_itens = int(float(personagem.get("limiteItens")))
+        except (TypeError, ValueError):
+            limite_itens = int(personagem["FOR"]) * 5
+
+        print(f"\n--- INVENTÁRIO DE {str(personagem['nome']).upper()} ---")
+        exibir_inventario(id_personagem, limite_itens)
+
+        print("\n[1] Adicionar Item do Catálogo")
+        print("[2] Remover / Diminuir Item")
+        print("[0] Voltar")
+        op = input("Opção: ").strip()
+
+        if op == "0":
+            break
+        elif op == "1":
+            adicionar_item_inventario(id_personagem, limite_itens)
+        elif op == "2":
+            remover_item_inventario(id_personagem)
+        else:
+            print("[ERRO] Opção inválida.")
 
 
 def exibir_ficha(personagem):
@@ -422,17 +672,26 @@ def exibir_ficha(personagem):
     print("-" * 70)
     print(f" ATRIBUTOS: AGI:{personagem['AGI']} FOR:{personagem['FOR']} INT:{personagem['INT']} PRE:{personagem['PRE']} VIG:{personagem['VIG']}")
     print("-" * 70)
+
+    try:
+        defesa = int(float(personagem.get('defesa')))
+    except (TypeError, ValueError):
+        defesa = 10 + int(personagem['AGI'])
+    try:
+        limite_itens = int(float(personagem.get('limiteItens')))
+    except (TypeError, ValueError):
+        limite_itens = int(personagem['FOR']) * 5
+
+    print(f" DEFESA: {defesa} | LIMITE DE ITENS: {limite_itens}")
+    print("-" * 70)
     
     print(" PERÍCIAS (0 = Destreinado | +5 = Treinado | +10 = Veterano | +15 = Expert):")
     
-    # Criar uma cópia formatada das perícias para exibição
     pericias_formatadas = []
     for p in LISTA_PERICIAS:
         valor = personagem.get(p, 0)
-        # Formata o nome para ter sempre o mesmo tamanho 
         nome_formatado = p.capitalize().ljust(15) 
         try:
-            # Converte com float antes para evitar crash caso o pandas leia como decimal 
             val_int = int(float(valor))
             if val_int > 0:
                 texto_valor = f"+{val_int}"
@@ -441,19 +700,17 @@ def exibir_ficha(personagem):
         except (ValueError, TypeError):
             texto_valor = "0 "
             
-        # Adiciona na lista com o valor também alinhado
         pericias_formatadas.append(f"{nome_formatado}: {texto_valor.ljust(3)}")
 
-    # Imprimir em 4 colunas para caber bonitinho e economizar espaço vertical
     colunas = 4
     for i in range(0, len(pericias_formatadas), colunas):
         linha = pericias_formatadas[i:i+colunas]
         print(" | ".join(linha))
-        
+
+    exibir_inventario(personagem["id"], limite_itens)
     print("="*70)
 
 def submenu_editar_agente(id_pers):
-    """ Menu detalhado para alterar partes específicas da ficha do agente """
     while True:
         df = carregar_tabela(ARQUIVO_PERSONAGENS)
         mask = df["id"].astype(int) == int(id_pers)
@@ -467,6 +724,7 @@ def submenu_editar_agente(id_pers):
         print("[5] Atributos ")
         print("[6] Refazer Perícias")
         print("[7] Refazer Ficha Completa")
+        print("[8] Itens / Inventário")
         print("[0] Voltar para a Ficha")
         
         op = input("Opção: ").strip()
@@ -500,6 +758,7 @@ def submenu_editar_agente(id_pers):
             print("O seu NEX mudou! Você precisa redistribuir os Atributos e Perícias para se adequar ao novo nível.")
             agi, forca, inte, pre, vig = validar_atributos_ordem(novo_nex)
             pv, san, pe = calcular_recursos(personagem["classe"], novo_nex, vig, pre)
+            defesa, limite_itens = calcular_defesa_limite(agi, forca)
             pericias_dict = distribuir_pericias(personagem["classe"], novo_nex, inte)
             
             nova_afinidade = personagem.get("afinidade", "Nenhuma")
@@ -513,6 +772,7 @@ def submenu_editar_agente(id_pers):
             df.loc[mask, "afinidade"] = nova_afinidade
             df.loc[mask, ["AGI", "FOR", "INT", "PRE", "VIG"]] = [agi, forca, inte, pre, vig]
             df.loc[mask, ["pvMAX", "pvATUAL", "sanMAX", "sanATUAL", "peMAX", "peATUAL"]] = [pv, pv, san, san, pe, pe]
+            df.loc[mask, ["defesa", "limiteItens"]] = [defesa, limite_itens]
             for p_nome, p_valor in pericias_dict.items():
                 df.loc[mask, p_nome] = p_valor
                 
@@ -531,9 +791,11 @@ def submenu_editar_agente(id_pers):
         elif op == "5":
             agi, forca, inte, pre, vig = validar_atributos_ordem(personagem["NEX"])
             pv, san, pe = calcular_recursos(personagem["classe"], personagem["NEX"], vig, pre)
+            defesa, limite_itens = calcular_defesa_limite(agi, forca)
             
             df.loc[mask, ["AGI", "FOR", "INT", "PRE", "VIG"]] = [agi, forca, inte, pre, vig]
             df.loc[mask, ["pvMAX", "pvATUAL", "sanMAX", "sanATUAL", "peMAX", "peATUAL"]] = [pv, pv, san, san, pe, pe]
+            df.loc[mask, ["defesa", "limiteItens"]] = [defesa, limite_itens]
             
             if inte != personagem["INT"]:
                 print("Você alterou seu Intelecto (INT). Isso afeta sua quantidade de perícias! Redistribua:")
@@ -552,7 +814,6 @@ def submenu_editar_agente(id_pers):
             print("[OK] Perícias atualizadas!")
             
         elif op == "7":
-            # Refazer ficha completa (a lógica original que você já tinha)
             novo_nome = input(f"Nome ({personagem['nome']}): ").strip() or personagem['nome']
             nova_classe = escolher_classe()
             novo_nex = escolher_nex()
@@ -561,6 +822,7 @@ def submenu_editar_agente(id_pers):
             
             agi, forca, inte, pre, vig = validar_atributos_ordem(novo_nex)
             pv, san, pe = calcular_recursos(nova_classe, novo_nex, vig, pre)
+            defesa, limite_itens = calcular_defesa_limite(agi, forca)
             pericias_dict = distribuir_pericias(nova_classe, novo_nex, inte)
 
             df.loc[mask, "nome"] = novo_nome
@@ -569,12 +831,17 @@ def submenu_editar_agente(id_pers):
             df.loc[mask, "afinidade"] = nova_afinidade
             df.loc[mask, ["AGI", "FOR", "INT", "PRE", "VIG"]] = [agi, forca, inte, pre, vig]
             df.loc[mask, ["pvMAX", "pvATUAL", "sanMAX", "sanATUAL", "peMAX", "peATUAL"]] = [pv, pv, san, san, pe, pe]
+            df.loc[mask, ["defesa", "limiteItens"]] = [defesa, limite_itens]
             for p_nome, p_valor in pericias_dict.items():
                 df.loc[mask, p_nome] = p_valor
 
             salvar_tabela(df, ARQUIVO_PERSONAGENS)
             print("[OK] Ficha refeita completamente!")
             break
+
+        elif op == "8":
+            gerenciar_inventario(id_pers)
+
         else:
             print("[ERRO] Opção inválida.")
 
@@ -604,7 +871,6 @@ def menu_personagem(id_pers):
                 print("[OK] Agente apagado no fluxo paranormal.")
                 break
         elif op == "1":
-            # Aqui ele puxa o submenu que acabamos de criar!
             submenu_editar_agente(id_pers)
         else:
             print("[ERRO] Opção inválida.")

@@ -1,6 +1,7 @@
 # ENTREGA 1: INÍCIO 
 # ENTREGA 3: CLASSES, NEX, RECURSOS AUTOMÁTICOS E AFINIDADE
 # ENTREGA 4: PERICIAS
+# ENTREGA 5: ITENS E INVENTÁRIO
 
 import os
 import pandas as pd
@@ -9,6 +10,8 @@ import pandas as pd
 ARQUIVO_USUARIOS = "usuarios.csv"
 ARQUIVO_PERSONAGENS = "personagens.csv"
 ARQUIVO_MESAS = "mesas.csv"
+ARQUIVO_ITENS = "itens.csv"
+ARQUIVO_INVENTARIO = "inventario.csv"
 ARQUIVO_SESSAO = "sessao.txt" 
 
 # Estrutura das tabelas
@@ -20,6 +23,7 @@ COLUNAS_PERSONAGENS = [
     "id", "id_usuario", "nome", "dataCriacao", "classe", "NEX", "afinidade",
     "AGI", "FOR", "INT", "PRE", "VIG",
     "pvATUAL", "pvMAX", "sanATUAL", "sanMAX", "peATUAL", "peMAX",
+    "defesa", "limiteItens",
     
     # === PERÍCIAS (28 Perícias Oficiais de Ordem Paranormal) ===
     "acrobacia", "adestramento", "artes", "atletismo", "atualidades", 
@@ -33,6 +37,18 @@ COLUNAS_PERSONAGENS = [
 COLUNAS_MESAS = [
     "id", "nomeDaMesa", "maxJogadores", 
     "codigoConvite", "anotacoes"
+]
+
+# Catálogo de itens do jogo (referência, não pertence a nenhum agente)
+# peso = "Espaços" do livro (é o que conta para o Limite de Itens do agente)
+COLUNAS_ITENS = [
+    "id", "nome", "tipoItem", "subtipo", "categoria", "peso",
+    "dano", "critico", "alcance", "tipoDano", "defesa", "descricao"
+]
+
+# Inventário: liga um item do catálogo a um personagem, com quantidade
+COLUNAS_INVENTARIO = [
+    "id", "id_personagem", "id_item", "quantidade"
 ]
 
 def inicializar_banco():
@@ -50,6 +66,14 @@ def inicializar_banco():
     if not os.path.exists(ARQUIVO_MESAS):
         pd.DataFrame(columns=COLUNAS_MESAS).to_csv(ARQUIVO_MESAS, index=False)
         print(f"Arquivo '{ARQUIVO_MESAS}' criado!")
+
+    if not os.path.exists(ARQUIVO_ITENS):
+        pd.DataFrame(columns=COLUNAS_ITENS).to_csv(ARQUIVO_ITENS, index=False)
+        print(f"Arquivo '{ARQUIVO_ITENS}' criado!")
+
+    if not os.path.exists(ARQUIVO_INVENTARIO):
+        pd.DataFrame(columns=COLUNAS_INVENTARIO).to_csv(ARQUIVO_INVENTARIO, index=False)
+        print(f"Arquivo '{ARQUIVO_INVENTARIO}' criado!")
 
 
 def carregar_tabela(nome_arquivo):
@@ -69,12 +93,10 @@ def salvar_tabela(df, nome_arquivo):
         return False
 
 def salvar_sessao(id_usuario):
-    """ Grava o ID do usuário logado no arquivo de sessão """
     with open(ARQUIVO_SESSAO, "w", encoding="utf-8") as f:
         f.write(str(id_usuario))
 
 def ler_sessao():
-    """ Retorna o ID do usuário logado se o arquivo existir """
     if not os.path.exists(ARQUIVO_SESSAO):
         return None
     try:
@@ -85,6 +107,5 @@ def ler_sessao():
         return None
 
 def encerrar_sessao():
-    """ Deleta o arquivo de sessão """
     if os.path.exists(ARQUIVO_SESSAO):
         os.remove(ARQUIVO_SESSAO)
