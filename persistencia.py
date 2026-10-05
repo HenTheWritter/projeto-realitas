@@ -2,6 +2,7 @@
 # ENTREGA 3: CLASSES, NEX, RECURSOS AUTOMÁTICOS E AFINIDADE
 # ENTREGA 4: PERICIAS
 # ENTREGA 5: ITENS E INVENTÁRIO
+# ENTREGA 6: RITUAIS
 
 import os
 import pandas as pd
@@ -12,6 +13,8 @@ ARQUIVO_PERSONAGENS = "personagens.csv"
 ARQUIVO_MESAS = "mesas.csv"
 ARQUIVO_ITENS = "itens.csv"
 ARQUIVO_INVENTARIO = "inventario.csv"
+ARQUIVO_RITUAIS = "rituais.csv"
+ARQUIVO_RITUAIS_AGENTE = "rituais_agente.csv"
 ARQUIVO_SESSAO = "sessao.txt" 
 
 # Estrutura das tabelas
@@ -51,6 +54,18 @@ COLUNAS_INVENTARIO = [
     "id", "id_personagem", "id_item", "quantidade"
 ]
 
+# Catálogo de rituais do jogo (referência)
+COLUNAS_RITUAIS = [
+    "id", "nome", "resumo", "elemento", "circulo", "execucao", "alcance", "alvoArea",
+    "duracao", "resistencia", "peDiscente", "circuloReqDiscente", "afinidadeReqDiscente",
+    "peVerdadeiro", "circuloReqVerdadeiro", "afinidadeReqVerdadeiro", "observacoes"
+]
+
+# Rituais que cada agente conhece (liga personagem -> ritual do catálogo)
+COLUNAS_RITUAIS_AGENTE = [
+    "id", "id_personagem", "id_ritual"
+]
+
 def inicializar_banco():
     """Verifica e cria os arquivos CSV caso não existam."""
     print("=== INICIALIZANDO BANCO DE DADOS ===")
@@ -74,6 +89,14 @@ def inicializar_banco():
     if not os.path.exists(ARQUIVO_INVENTARIO):
         pd.DataFrame(columns=COLUNAS_INVENTARIO).to_csv(ARQUIVO_INVENTARIO, index=False)
         print(f"Arquivo '{ARQUIVO_INVENTARIO}' criado!")
+
+    if not os.path.exists(ARQUIVO_RITUAIS):
+        pd.DataFrame(columns=COLUNAS_RITUAIS).to_csv(ARQUIVO_RITUAIS, index=False)
+        print(f"Arquivo '{ARQUIVO_RITUAIS}' criado (vazio)!")
+
+    if not os.path.exists(ARQUIVO_RITUAIS_AGENTE):
+        pd.DataFrame(columns=COLUNAS_RITUAIS_AGENTE).to_csv(ARQUIVO_RITUAIS_AGENTE, index=False)
+        print(f"Arquivo '{ARQUIVO_RITUAIS_AGENTE}' criado!")
 
 
 def carregar_tabela(nome_arquivo):
@@ -107,5 +130,6 @@ def ler_sessao():
         return None
 
 def encerrar_sessao():
+    """ Deleta o arquivo de sessão """
     if os.path.exists(ARQUIVO_SESSAO):
         os.remove(ARQUIVO_SESSAO)

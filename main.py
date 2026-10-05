@@ -2,10 +2,11 @@
 # ENTREGA 3: CLASSES, NEX, RECURSOS AUTOMÁTICOS E AFINIDADE
 # ENTREGA 4: PERICIAS
 # ENTREGA 5: DEFESA, LIMITE DE ITENS E INVENTÁRIO
-# ENTREGA 6:
-# ENTREGA 7: 
+# ENTREGA 6: RITUAIS
+# ENTREGA 7: ROLAGEM DE DADOS
 
 import os
+import random
 from datetime import date
 import pandas as pd
 from persistencia import (
@@ -13,6 +14,8 @@ from persistencia import (
     ARQUIVO_USUARIOS,
     ARQUIVO_ITENS,
     ARQUIVO_INVENTARIO,
+    ARQUIVO_RITUAIS,
+    ARQUIVO_RITUAIS_AGENTE,
     carregar_tabela,
     inicializar_banco,
     salvar_tabela,
@@ -46,6 +49,18 @@ LISTA_PERICIAS = [
     "pontaria", "profissao", "reflexos", "religiao", "sobrevivencia", 
     "tatica", "tecnologia", "vontade"
 ]
+
+PERICIA_ATRIBUTO = {
+    "acrobacia": "AGI", "adestramento": "PRE", "artes": "PRE", "atletismo": "FOR",
+    "atualidades": "INT", "ciencias": "INT", "crime": "AGI", "diplomacia": "PRE",
+    "enganacao": "PRE", "fortitude": "VIG", "furtividade": "AGI", "iniciativa": "AGI",
+    "intimidacao": "PRE", "intuicao": "PRE", "investigacao": "INT", "luta": "FOR",
+    "medicina": "INT", "ocultismo": "INT", "percepcao": "PRE", "pilotagem": "AGI",
+    "pontaria": "AGI", "profissao": "INT", "reflexos": "AGI", "religiao": "PRE",
+    "sobrevivencia": "INT", "tatica": "INT", "tecnologia": "INT", "vontade": "PRE"
+}
+
+DADOS_VALIDOS = [4, 6, 8, 10, 12, 20]
 
 
 # ======================================================
@@ -274,6 +289,140 @@ def distribuir_pericias(classe, nex, inte):
 
 
 # ======================================================
+# FUNÇÕES DE ROLAGEM DE DADOS
+# ======================================================
+
+def rolar_dado(lados, quantidade=1):
+    return [random.randint(1, lados) for _ in range(quantidade)]
+
+
+def menu_rolar_dados_livre():
+    print("\n--- ROLAGEM LIVRE ---")
+    print("[1] d4 | [2] d6 | [3] d8 | [4] d10 | [5] d12 | [6] d20")
+    opcoes = {str(i): lados for i, lados in enumerate(DADOS_VALIDOS, start=1)}
+
+    op = input("Escolha o dado: ").strip()
+    if op not in opcoes:
+        print("[ERRO] Opção inválida.")
+        return
+    lados = opcoes[op]
+
+    try:
+        qtd = int(input("Quantidade de dados: ").strip())
+        if qtd <= 0:
+            print("[ERRO] A quantidade deve ser maior que zero.")
+            return
+    except ValueError:
+        print("[ERRO] Digite um número válido.")
+        return
+
+    resultados = rolar_dado(lados, qtd)
+    print(f"\nRolando {qtd}d{lados}: {resultados}")
+    print(f"Soma total: {sum(resultados)}")
+    if qtd > 1:
+        print(f"Maior valor: {max(resultados)}")
+
+
+def selecionar_personagem_para_teste(usuario_logado):
+    df = carregar_tabela(ARQUIVO_PERSONAGENS)
+    meus = df[df["id_usuario"].astype(int) == int(usuario_logado["id"])] if not df.empty else df
+
+    if meus.empty:
+        print("[ERRO] Você não possui agentes cadastrados.")
+        return None
+
+    meus = meus.reset_index(drop=True)
+    print("\n--- ESCOLHA O AGENTE ---")
+    for i, row in meus.iterrows():
+        print(f"[{i + 1:>2}] {row['nome']} (NEX {row['NEX']}%)")
+
+    escolha = input("Número do agente (ou 0 para cancelar): ").strip()
+    if escolha == "0":
+        return None
+    if not escolha.isdigit() or not (1 <= int(escolha) <= len(meus)):
+        print("[ERRO] Número inválido.")
+        return None
+
+    return meus.iloc[int(escolha) - 1].to_dict()
+
+
+def rolar_teste_atributo(personagem):
+    atributos = ["AGI", "FOR", "INT", "PRE", "VIG"]
+
+    print(f"\n--- TESTE DE ATRIBUTO ({personagem['nome']}) ---")
+    for i, a in enumerate(atributos, start=1):
+        print(f"[{i}] {a} ({int(personagem[a])})")
+
+    escolha = input("Escolha o atributo: ").strip()
+    if not escolha.isdigit() or not (1 <= int(escolha) <= len(atributos)):
+        print("[ERRO] Número inválido.")
+        return
+
+    atributo = atributos[int(escolha) - 1]
+    valor = int(personagem[atributo])
+    qtd_dados = max(1, valor)
+
+    resultados = rolar_dado(20, qtd_dados)
+    maior = max(resultados)
+
+    print(f"\n🎲 Teste de {atributo} ({valor}): rolando {qtd_dados}d20 -> {resultados}")
+    print(f"Maior resultado: {maior}")
+
+
+def rolar_teste_pericia(personagem):
+    pericias_vals = {p: int(float(personagem.get(p, 0))) for p in LISTA_PERICIAS}
+
+    print(f"\n--- TESTE DE PERÍCIA ({personagem['nome']}) ---")
+    imprimir_lista_numerada(pericias_vals, LISTA_PERICIAS)
+
+    escolha = input("Digite o NÚMERO da perícia: ").strip()
+    if not escolha.isdigit() or not (1 <= int(escolha) <= len(LISTA_PERICIAS)):
+        print("[ERRO] Número inválido.")
+        return
+
+    pericia = LISTA_PERICIAS[int(escolha) - 1]
+    atributo = PERICIA_ATRIBUTO[pericia]
+    valor_atributo = int(personagem[atributo])
+    bonus_pericia = pericias_vals[pericia]
+    qtd_dados = max(1, valor_atributo)
+
+    resultados = rolar_dado(20, qtd_dados)
+    maior = max(resultados)
+    total = maior + bonus_pericia
+
+    print(f"\nTeste de {pericia.capitalize()} ({atributo} {valor_atributo} + Perícia +{bonus_pericia}):")
+    print(f"   Dados: {qtd_dados}d20 -> {resultados}")
+    print(f"   Maior: {maior} + Perícia: {bonus_pericia} = TOTAL: {total}")
+
+
+def menu_rolagem_dados(usuario_logado=None):
+    while True:
+        print("\n--- ROLAGEM DE DADOS ---")
+        print("[1] Rolagem Livre (escolher dado e quantidade)")
+        if usuario_logado:
+            print("[2] Teste de Atributo")
+            print("[3] Teste de Perícia")
+        print("[0] Voltar")
+
+        op = input("Opção: ").strip()
+
+        if op == "0":
+            break
+        elif op == "1":
+            menu_rolar_dados_livre()
+        elif op == "2" and usuario_logado:
+            personagem = selecionar_personagem_para_teste(usuario_logado)
+            if personagem:
+                rolar_teste_atributo(personagem)
+        elif op == "3" and usuario_logado:
+            personagem = selecionar_personagem_para_teste(usuario_logado)
+            if personagem:
+                rolar_teste_pericia(personagem)
+        else:
+            print("[ERRO] Opção inválida.")
+
+
+# ======================================================
 # FUNÇÕES DE USUÁRIO E AUTENTICAÇÃO
 # ======================================================
 
@@ -377,6 +526,8 @@ def excluir_conta_logada(usuario_logado):
         df_pers = carregar_tabela(ARQUIVO_PERSONAGENS)
         
         if not df_pers.empty:
+            ids_dos_agentes = df_pers[df_pers["id_usuario"].astype(int) == id_alvo]["id"].astype(int).tolist()
+            limpar_dados_agentes(ids_dos_agentes)
             df_pers = df_pers[df_pers["id_usuario"].astype(int) != id_alvo]
             salvar_tabela(df_pers, ARQUIVO_PERSONAGENS)
 
@@ -660,6 +811,227 @@ def gerenciar_inventario(id_personagem):
             print("[ERRO] Opção inválida.")
 
 
+# ======================================================
+# FUNÇÕES DE RITUAIS
+# ======================================================
+
+# NEX mínimo para liberar cada círculo de ritual 
+CIRCULOS_POR_NEX = [(85, 4), (55, 3), (25, 2)]
+
+def circulo_maximo(nex):
+    for nex_minimo, circulo in CIRCULOS_POR_NEX:
+        if nex >= nex_minimo:
+            return circulo
+    return 1
+
+
+def _txt(valor, padrao="-"):
+    if valor is None or pd.isna(valor):
+        return padrao
+    s = str(valor).strip()
+    return s if s and s.lower() != "nan" else padrao
+
+
+def _elemento_curto(elemento):
+    e = _txt(elemento)
+    return "Vários" if "/" in e else e
+
+
+def _custo_texto(pe, circulo, afinidade):
+    if pe is None or pd.isna(pe):
+        return "-"
+    partes = [f"+{int(float(pe))} PE"]
+    if circulo is not None and pd.notna(circulo):
+        partes.append(f"{int(float(circulo))}º círculo")
+    if afinidade is True or str(afinidade).strip().lower() == "true":
+        partes.append("afinidade")
+    return ", ".join(partes)
+
+
+def obter_rituais_agente(id_personagem):
+    df_ra = carregar_tabela(ARQUIVO_RITUAIS_AGENTE)
+    df_r = carregar_tabela(ARQUIVO_RITUAIS)
+    if df_ra.empty or df_r.empty:
+        return pd.DataFrame()
+    ids = df_ra[df_ra["id_personagem"].astype(int) == int(id_personagem)]["id_ritual"].astype(int).tolist()
+    return df_r[df_r["id"].astype(int).isin(ids)].sort_values(["circulo", "nome"]).reset_index(drop=True)
+
+
+def exibir_rituais_ficha(id_personagem):
+    rituais = obter_rituais_agente(id_personagem)
+    print("-" * 70)
+    print(f" RITUAIS ({len(rituais)}):")
+    if rituais.empty:
+        print("   (Nenhum ritual aprendido)")
+        return
+    for _, r in rituais.iterrows():
+        print(f"   - {str(r['nome']).ljust(26)} {_elemento_curto(r['elemento'])} {int(r['circulo'])}º | "
+              f"Exec: {_txt(r['execucao'])} | Alc: {_txt(r['alcance'])} | Dur: {_txt(r['duracao'])}")
+
+
+def exibir_detalhes_ritual(r):
+    print("\n" + "-" * 70)
+    print(f" {str(r['nome']).upper()}  ({_txt(r['elemento'])} - {int(r['circulo'])}º círculo)")
+    print(f" Resumo: {_txt(r.get('resumo'))}")
+    print(f" Execução: {_txt(r['execucao'])} | Alcance: {_txt(r['alcance'])}")
+    print(f" Alvo/Área: {_txt(r['alvoArea'])}")
+    print(f" Duração: {_txt(r['duracao'])} | Resistência: {_txt(r['resistencia'])}")
+    print(f" Discente:   {_custo_texto(r.get('peDiscente'), r.get('circuloReqDiscente'), r.get('afinidadeReqDiscente'))}")
+    print(f" Verdadeiro: {_custo_texto(r.get('peVerdadeiro'), r.get('circuloReqVerdadeiro'), r.get('afinidadeReqVerdadeiro'))}")
+    obs = _txt(r.get("observacoes"), "")
+    if obs:
+        print(f" Obs.: {obs}")
+    print("-" * 70)
+
+
+def ver_ritual_agente(id_personagem):
+    rituais = obter_rituais_agente(id_personagem)
+    if rituais.empty:
+        print("[ERRO] Este agente ainda não aprendeu nenhum ritual.")
+        return
+
+    print("\n--- RITUAIS DO AGENTE ---")
+    for i, r in rituais.iterrows():
+        print(f"[{i + 1:>2}] {str(r['nome']).ljust(26)}{_elemento_curto(r['elemento'])} {int(r['circulo'])}º")
+
+    escolha = input("\nDigite o NÚMERO do ritual para ver detalhes (ou 0 para voltar): ").strip()
+    if escolha == "0":
+        return
+    if not escolha.isdigit() or not (1 <= int(escolha) <= len(rituais)):
+        print("[ERRO] Número inválido.")
+        return
+    exibir_detalhes_ritual(rituais.iloc[int(escolha) - 1])
+
+
+def adicionar_ritual(id_personagem, personagem):
+    df_r = carregar_tabela(ARQUIVO_RITUAIS)
+    if df_r.empty:
+        print("[ERRO] O catálogo de rituais (rituais.csv) está vazio ou não foi encontrado.")
+        return
+
+    nex = int(personagem["NEX"])
+    circ_max = circulo_maximo(nex)
+
+    conhecidos = obter_rituais_agente(id_personagem)
+    ids_conhecidos = set(conhecidos["id"].astype(int)) if not conhecidos.empty else set()
+
+    elementos = sorted(df_r["elemento"].dropna().astype(str).unique())
+    print(f"\n--- APRENDER RITUAL (NEX {nex}% -> até {circ_max}º círculo) ---")
+    print("Filtrar por elemento:")
+    print("[0] Todos")
+    for i, el in enumerate(elementos, start=1):
+        print(f"[{i}] {el}")
+
+    filtro = input("Opção: ").strip()
+    if not filtro.isdigit() or int(filtro) > len(elementos):
+        print("[ERRO] Opção inválida.")
+        return
+
+    df_f = df_r[(df_r["circulo"].astype(int) <= circ_max) & (~df_r["id"].astype(int).isin(ids_conhecidos))]
+    if int(filtro) > 0:
+        df_f = df_f[df_f["elemento"].astype(str) == elementos[int(filtro) - 1]]
+    df_f = df_f.sort_values(["circulo", "nome"]).reset_index(drop=True)
+
+    if df_f.empty:
+        print("[ERRO] Nenhum ritual disponível com esse filtro (círculo liberado ou já aprendidos).")
+        return
+
+    print("\n--- RITUAIS DISPONÍVEIS ---")
+    for i, r in df_f.iterrows():
+        print(f"[{i + 1:>2}] {str(r['nome']).ljust(26)}{_elemento_curto(r['elemento']).ljust(13)} {int(r['circulo'])}º | {_txt(r.get('resumo'))}")
+
+    escolha = input("\nDigite o NÚMERO do ritual (ou 0 para cancelar): ").strip()
+    if escolha == "0":
+        return
+    if not escolha.isdigit() or not (1 <= int(escolha) <= len(df_f)):
+        print("[ERRO] Número inválido.")
+        return
+
+    ritual = df_f.iloc[int(escolha) - 1]
+    exibir_detalhes_ritual(ritual)
+
+    if input(f"Aprender '{ritual['nome']}'? (S/N): ").strip().upper() != "S":
+        print("Cancelado.")
+        return
+
+    df_ra = carregar_tabela(ARQUIVO_RITUAIS_AGENTE)
+    novo_id = 1 if df_ra.empty else int(df_ra["id"].max()) + 1
+    novo_reg = {"id": novo_id, "id_personagem": int(id_personagem), "id_ritual": int(ritual["id"])}
+    df_ra = pd.concat([df_ra, pd.DataFrame([novo_reg])], ignore_index=True)
+
+    if salvar_tabela(df_ra, ARQUIVO_RITUAIS_AGENTE):
+        print(f"[OK] Ritual '{ritual['nome']}' adicionado ao agente!")
+
+
+def remover_ritual(id_personagem):
+    rituais = obter_rituais_agente(id_personagem)
+    if rituais.empty:
+        print("[ERRO] Este agente ainda não aprendeu nenhum ritual.")
+        return
+
+    print("\n--- RITUAIS DO AGENTE ---")
+    for i, r in rituais.iterrows():
+        print(f"[{i + 1:>2}] {str(r['nome']).ljust(26)}{_elemento_curto(r['elemento'])} {int(r['circulo'])}º")
+
+    escolha = input("\nDigite o NÚMERO do ritual a esquecer (ou 0 para cancelar): ").strip()
+    if escolha == "0":
+        return
+    if not escolha.isdigit() or not (1 <= int(escolha) <= len(rituais)):
+        print("[ERRO] Número inválido.")
+        return
+
+    ritual = rituais.iloc[int(escolha) - 1]
+    if input(f"Remover '{ritual['nome']}' deste agente? (S/N): ").strip().upper() != "S":
+        print("Cancelado.")
+        return
+
+    df_ra = carregar_tabela(ARQUIVO_RITUAIS_AGENTE)
+    remover = (df_ra["id_personagem"].astype(int) == int(id_personagem)) & (df_ra["id_ritual"].astype(int) == int(ritual["id"]))
+    df_ra = df_ra[~remover]
+    if salvar_tabela(df_ra, ARQUIVO_RITUAIS_AGENTE):
+        print(f"[OK] Ritual '{ritual['nome']}' removido.")
+
+
+def gerenciar_rituais(id_personagem):
+    while True:
+        df_pers = carregar_tabela(ARQUIVO_PERSONAGENS)
+        linha_pers = df_pers[df_pers["id"].astype(int) == int(id_personagem)]
+        if linha_pers.empty:
+            break
+        personagem = linha_pers.iloc[0].to_dict()
+
+        print(f"\n--- RITUAIS DE {str(personagem['nome']).upper()} (NEX {personagem['NEX']}% | até {circulo_maximo(int(personagem['NEX']))}º círculo) ---")
+        exibir_rituais_ficha(id_personagem)
+
+        print("\n[1] Ver detalhes de um ritual")
+        print("[2] Aprender novo ritual")
+        print("[3] Esquecer ritual")
+        print("[0] Voltar")
+        op = input("Opção: ").strip()
+
+        if op == "0":
+            break
+        elif op == "1":
+            ver_ritual_agente(id_personagem)
+        elif op == "2":
+            adicionar_ritual(id_personagem, personagem)
+        elif op == "3":
+            remover_ritual(id_personagem)
+        else:
+            print("[ERRO] Opção inválida.")
+
+
+def limpar_dados_agentes(ids_personagens):
+    ids = [int(i) for i in ids_personagens]
+    if not ids:
+        return
+    for arquivo in (ARQUIVO_INVENTARIO, ARQUIVO_RITUAIS_AGENTE):
+        df = carregar_tabela(arquivo)
+        if not df.empty:
+            df = df[~df["id_personagem"].astype(int).isin(ids)]
+            salvar_tabela(df, arquivo)
+
+
 def exibir_ficha(personagem):
     afinidade = personagem.get('afinidade', 'Nenhuma')
     cor = CORES_AFINIDADE.get(afinidade, RESET_COR)
@@ -708,6 +1080,7 @@ def exibir_ficha(personagem):
         print(" | ".join(linha))
 
     exibir_inventario(personagem["id"], limite_itens)
+    exibir_rituais_ficha(personagem["id"])
     print("="*70)
 
 def submenu_editar_agente(id_pers):
@@ -725,6 +1098,7 @@ def submenu_editar_agente(id_pers):
         print("[6] Refazer Perícias")
         print("[7] Refazer Ficha Completa")
         print("[8] Itens / Inventário")
+        print("[9] Rituais")
         print("[0] Voltar para a Ficha")
         
         op = input("Opção: ").strip()
@@ -842,6 +1216,9 @@ def submenu_editar_agente(id_pers):
         elif op == "8":
             gerenciar_inventario(id_pers)
 
+        elif op == "9":
+            gerenciar_rituais(id_pers)
+
         else:
             print("[ERRO] Opção inválida.")
 
@@ -868,6 +1245,7 @@ def menu_personagem(id_pers):
             if input("Deseja mesmo DELETAR este agente? (S/N): ").strip().upper() == "S":
                 df = df[df["id"].astype(int) != int(id_pers)]
                 salvar_tabela(df, ARQUIVO_PERSONAGENS)
+                limpar_dados_agentes([id_pers])
                 print("[OK] Agente apagado no fluxo paranormal.")
                 break
         elif op == "1":
@@ -933,12 +1311,14 @@ def menu():
             print("[4] Excluir Minha Conta")
             print("[5] Trocar de Usuário (Fazer Login)")
             print("[6] Deslogar")
+            print("[7] Rolar Dados")
             print("[0] Sair do Sistema")
         else:
             print(" NENHUM USUÁRIO LOGADO")
             print("----------------------------------------")
             print("[1] Fazer Login")
             print("[2] Cadastrar Novo Usuário")
+            print("[3] Rolar Dados (livre)")
             print("[0] Sair do Sistema")
 
         opcao = input("\nOpção: ").strip()
@@ -950,6 +1330,7 @@ def menu():
             elif opcao == "4": excluir_conta_logada(usuario_logado)
             elif opcao == "5": fazer_login()
             elif opcao == "6": deslogar_usuario()
+            elif opcao == "7": menu_rolagem_dados(usuario_logado)
             elif opcao == "0":
                 print("Desconectando da Ordo Realitas... Até logo!")
                 break
@@ -958,6 +1339,7 @@ def menu():
         else:
             if opcao == "1": fazer_login()
             elif opcao == "2": cadastrar_usuario()
+            elif opcao == "3": menu_rolagem_dados()
             elif opcao == "0":
                 print("Desconectando da Ordo Realitas... Até logo!")
                 break
