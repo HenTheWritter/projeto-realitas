@@ -3,7 +3,11 @@
 # ENTREGA 4: PERICIAS
 # ENTREGA 5: DEFESA, LIMITE DE ITENS E INVENTÁRIO
 # ENTREGA 6: RITUAIS
-# ENTREGA 7: ROLAGEM DE DADOS
+# ENTREGA 7: MENU DE RITUAIS E ITENS
+# ENTREGA 8: ROLAGEM DE DADOS
+# ENTREGA 9: PATENTES E PRESTÍGIO (limite de itens por categoria)
+# ENTREGA 10: BESTIÁRIO (ameacas.py)
+# ENTREGA 11/12: CAMPANHAS E VINCULAÇÃO AGENTE <-> CAMPANHA (campanhas.py)
 
 import os
 import random
@@ -16,12 +20,28 @@ from persistencia import (
     ARQUIVO_INVENTARIO,
     ARQUIVO_RITUAIS,
     ARQUIVO_RITUAIS_AGENTE,
+    ARQUIVO_CAMPANHA_AGENTES,
     carregar_tabela,
     inicializar_banco,
     salvar_tabela,
     salvar_sessao,
     ler_sessao,
     encerrar_sessao
+)
+
+from prestigio import (
+    obter_pp,
+    obter_patente,
+    rotulo_categoria,
+    resumo_categorias,
+    verificar_limite_categoria,
+    menu_prestigio,
+)
+from ameacas import menu_ameacas
+from campanhas import (
+    menu_campanhas,
+    limpar_usuario_campanhas,
+    atualizar_nome_mestre,
 )
 
 # Arquivo para manter o usuário logado entre execuções do código
@@ -60,7 +80,7 @@ PERICIA_ATRIBUTO = {
     "sobrevivencia": "INT", "tatica": "INT", "tecnologia": "INT", "vontade": "PRE"
 }
 
-DADOS_VALIDOS = [4, 6, 8, 10, 12, 20]
+DADOS_VALIDOS = [4, 6, 8, 10, 12, 20, 100]
 
 
 # ======================================================
@@ -298,7 +318,7 @@ def rolar_dado(lados, quantidade=1):
 
 def menu_rolar_dados_livre():
     print("\n--- ROLAGEM LIVRE ---")
-    print("[1] d4 | [2] d6 | [3] d8 | [4] d10 | [5] d12 | [6] d20")
+    print("[1] d4 | [2] d6 | [3] d8 | [4] d10 | [5] d12 | [6] d20 | [7] d100")
     opcoes = {str(i): lados for i, lados in enumerate(DADOS_VALIDOS, start=1)}
 
     op = input("Escolha o dado: ").strip()
@@ -365,7 +385,7 @@ def rolar_teste_atributo(personagem):
     resultados = rolar_dado(20, qtd_dados)
     maior = max(resultados)
 
-    print(f"\n🎲 Teste de {atributo} ({valor}): rolando {qtd_dados}d20 -> {resultados}")
+    print(f"\nTeste de {atributo} ({valor}): rolando {qtd_dados}d20 -> {resultados}")
     print(f"Maior resultado: {maior}")
 
 
@@ -516,6 +536,7 @@ def editar_perfil_logado(usuario_logado):
         usuario_logado['senha'] = str(nova_senha)
         usuario_logado['email'] = novo_email
         usuario_logado['idade'] = nova_idade
+        atualizar_nome_mestre(id_alvo, novo_nome)
 
 def excluir_conta_logada(usuario_logado):
     df_usuarios = carregar_tabela(ARQUIVO_USUARIOS)
@@ -530,6 +551,9 @@ def excluir_conta_logada(usuario_logado):
             limpar_dados_agentes(ids_dos_agentes)
             df_pers = df_pers[df_pers["id_usuario"].astype(int) != id_alvo]
             salvar_tabela(df_pers, ARQUIVO_PERSONAGENS)
+
+        # Apaga as campanhas que ele mestra e o remove das campanhas em que joga
+        limpar_usuario_campanhas(id_alvo)
 
         salvar_tabela(df_usuarios, ARQUIVO_USUARIOS)
         encerrar_sessao()
@@ -597,12 +621,13 @@ def cadastrar_personagem(usuario_logado):
         "AGI": agi, "FOR": forca, "INT": inte, "PRE": pre, "VIG": vig,
         "pvATUAL": pv, "pvMAX": pv, "sanATUAL": san, "sanMAX": san, "peATUAL": pe, "peMAX": pe,
         "defesa": defesa, "limiteItens": limite_itens,
+        "pp": 0,  # todo agente começa como Recruta
         **pericias_dict 
     }
 
     df_pers = pd.concat([df_pers, pd.DataFrame([novo_pers])], ignore_index=True)
     if salvar_tabela(df_pers, ARQUIVO_PERSONAGENS):
-        print(f"\n[OK] Agente '{nome}' salvo com sucesso! (PV: {pv} | SAN: {san} | PE: {pe} | Defesa: {defesa} | Limite de Itens: {limite_itens})")
+        print(f"\n[OK] Agente '{nome}' salvo com sucesso! (PV: {pv} | SAN: {san} | PE: {pe} | Defesa: {defesa} | Limite de Itens: {limite_itens} | Patente: Recruta)")
 
 
 # ======================================================
@@ -629,13 +654,14 @@ def calcular_peso_total(id_personagem):
     return total
 
 
-def exibir_inventario(id_personagem, limite_itens):
+def exibir_inventario(id_personagem, limite_itens, pp=0):
     df_inv = carregar_tabela(ARQUIVO_INVENTARIO)
     df_itens = carregar_tabela(ARQUIVO_ITENS)
 
     peso_total = calcular_peso_total(id_personagem)
     print("-" * 70)
     print(f" INVENTÁRIO (Carga: {peso_total:g} / {limite_itens}):")
+    print(f" Itens por categoria ({obter_patente(pp)['nome']}): {resumo_categorias(id_personagem, pp)}")
 
     if df_inv.empty or df_itens.empty:
         print("   (Mochila vazia)")
@@ -653,10 +679,11 @@ def exibir_inventario(id_personagem, limite_itens):
         item = item_row.iloc[0]
         qtd = float(linha["quantidade"])
         peso_unit = float(item["peso"])
-        print(f"   - {item['nome']} (x{qtd:g}) | Peso unit.: {peso_unit:g} | Subtotal: {qtd * peso_unit:g}")
+        cat = rotulo_categoria(item.get("categoria"))
+        print(f"   - {item['nome']} (x{qtd:g}) | Cat. {cat} | Peso unit.: {peso_unit:g} | Subtotal: {qtd * peso_unit:g}")
 
 
-def adicionar_item_inventario(id_personagem, limite_itens):
+def adicionar_item_inventario(id_personagem, limite_itens, pp=0):
     df_itens = carregar_tabela(ARQUIVO_ITENS)
     if df_itens.empty:
         print("[ERRO] O catálogo de itens ainda está vazio.")
@@ -668,6 +695,7 @@ def adicionar_item_inventario(id_personagem, limite_itens):
     for i, linha in df_itens.iterrows():
         nome_fmt = str(linha["nome"]).ljust(26)
         tipo = str(linha.get("tipoItem", "-")).ljust(11)
+        cat_txt = f"Cat:{rotulo_categoria(linha.get('categoria'))}".ljust(8)
         peso_txt = f"Peso:{linha['peso']}".ljust(8)
 
         extra = ""
@@ -684,7 +712,7 @@ def adicionar_item_inventario(id_personagem, limite_itens):
         if pd.notna(defesa) and str(defesa).strip() not in ("", "-", "nan"):
             extra += f" Defesa:{defesa}"
 
-        print(f"[{i + 1:>2}] {nome_fmt}{tipo}{peso_txt}{extra}")
+        print(f"[{i + 1:>2}] {nome_fmt}{tipo}{cat_txt}{peso_txt}{extra}")
 
     escolha = input("\nDigite o NÚMERO do item (ou 0 para cancelar): ").strip()
     if escolha == "0":
@@ -710,6 +738,12 @@ def adicionar_item_inventario(id_personagem, limite_itens):
 
     if peso_novo > limite_itens:
         print(f"[ERRO] Isso ultrapassa seu Limite de Itens! (Carga resultante: {peso_novo:g} / {limite_itens})")
+        return
+
+    # Limite por categoria (depende da patente / PP)
+    ok, mensagem = verificar_limite_categoria(id_personagem, pp, item.get("categoria"), qtd)
+    if not ok:
+        print(f"[ERRO] {mensagem}")
         return
 
     df_inv = carregar_tabela(ARQUIVO_INVENTARIO)
@@ -787,6 +821,7 @@ def gerenciar_inventario(id_personagem):
         if linha_pers.empty:
             break
         personagem = linha_pers.iloc[0].to_dict()
+        pp = obter_pp(personagem)
 
         try:
             limite_itens = int(float(personagem.get("limiteItens")))
@@ -794,7 +829,7 @@ def gerenciar_inventario(id_personagem):
             limite_itens = int(personagem["FOR"]) * 5
 
         print(f"\n--- INVENTÁRIO DE {str(personagem['nome']).upper()} ---")
-        exibir_inventario(id_personagem, limite_itens)
+        exibir_inventario(id_personagem, limite_itens, pp)
 
         print("\n[1] Adicionar Item do Catálogo")
         print("[2] Remover / Diminuir Item")
@@ -804,7 +839,7 @@ def gerenciar_inventario(id_personagem):
         if op == "0":
             break
         elif op == "1":
-            adicionar_item_inventario(id_personagem, limite_itens)
+            adicionar_item_inventario(id_personagem, limite_itens, pp)
         elif op == "2":
             remover_item_inventario(id_personagem)
         else:
@@ -1022,10 +1057,11 @@ def gerenciar_rituais(id_personagem):
 
 
 def limpar_dados_agentes(ids_personagens):
+    """Apaga tudo que pertence aos agentes: inventário, rituais e vínculos com campanhas."""
     ids = [int(i) for i in ids_personagens]
     if not ids:
         return
-    for arquivo in (ARQUIVO_INVENTARIO, ARQUIVO_RITUAIS_AGENTE):
+    for arquivo in (ARQUIVO_INVENTARIO, ARQUIVO_RITUAIS_AGENTE, ARQUIVO_CAMPANHA_AGENTES):
         df = carregar_tabela(arquivo)
         if not df.empty:
             df = df[~df["id_personagem"].astype(int).isin(ids)]
@@ -1035,10 +1071,13 @@ def limpar_dados_agentes(ids_personagens):
 def exibir_ficha(personagem):
     afinidade = personagem.get('afinidade', 'Nenhuma')
     cor = CORES_AFINIDADE.get(afinidade, RESET_COR)
+    pp = obter_pp(personagem)
+    patente = obter_patente(pp)
     
     print("\n" + "="*70)
     print(f" NOME: {cor}{str(personagem['nome']).upper()}{RESET_COR}")
     print(f" CLASSE: {personagem.get('classe', 'Desconhecida')} | NEX: {personagem['NEX']}% | AFINIDADE: {afinidade}")
+    print(f" PATENTE: {patente['nome']} | PP: {pp} | CRÉDITO: {patente['credito']}")
     print("-" * 70)
     print(f" RECURSOS: PV: {personagem['pvMAX']} | SAN: {personagem['sanMAX']} | PE: {personagem['peMAX']}")
     print("-" * 70)
@@ -1079,7 +1118,7 @@ def exibir_ficha(personagem):
         linha = pericias_formatadas[i:i+colunas]
         print(" | ".join(linha))
 
-    exibir_inventario(personagem["id"], limite_itens)
+    exibir_inventario(personagem["id"], limite_itens, pp)
     exibir_rituais_ficha(personagem["id"])
     print("="*70)
 
@@ -1099,6 +1138,7 @@ def submenu_editar_agente(id_pers):
         print("[7] Refazer Ficha Completa")
         print("[8] Itens / Inventário")
         print("[9] Rituais")
+        print("[10] Prestígio (PP / Patente)")
         print("[0] Voltar para a Ficha")
         
         op = input("Opção: ").strip()
@@ -1210,7 +1250,7 @@ def submenu_editar_agente(id_pers):
                 df.loc[mask, p_nome] = p_valor
 
             salvar_tabela(df, ARQUIVO_PERSONAGENS)
-            print("[OK] Ficha refeita completamente!")
+            print("[OK] Ficha refeita completamente! (Os PP e a patente foram mantidos.)")
             break
 
         elif op == "8":
@@ -1218,6 +1258,9 @@ def submenu_editar_agente(id_pers):
 
         elif op == "9":
             gerenciar_rituais(id_pers)
+
+        elif op == "10":
+            menu_prestigio(id_pers)
 
         else:
             print("[ERRO] Opção inválida.")
@@ -1274,7 +1317,8 @@ def listar_personagens(usuario_logado):
 
         print(f"\n--- AGENTES DE {str(usuario_logado['nome']).upper()} ---")
         for _, row in seus_personagens.iterrows():
-            print(f"ID: {row['id']} | NOME: {row['nome']} | CLASSE: {row.get('classe', 'Mundano')} | NEX: {row['NEX']}%")
+            patente = obter_patente(obter_pp(row.to_dict()))["nome"]
+            print(f"ID: {row['id']} | NOME: {row['nome']} | CLASSE: {row.get('classe', 'Mundano')} | NEX: {row['NEX']}% | {patente}")
             
         print("\nDigite o ID do Agente para ABRIR A FICHA, ou 0 para voltar ao menu.")
         try:
@@ -1312,6 +1356,8 @@ def menu():
             print("[5] Trocar de Usuário (Fazer Login)")
             print("[6] Deslogar")
             print("[7] Rolar Dados")
+            print("[8] Campanhas")
+            print("[9] Bestiário (Ameaças Paranormais)")
             print("[0] Sair do Sistema")
         else:
             print(" NENHUM USUÁRIO LOGADO")
@@ -1319,6 +1365,7 @@ def menu():
             print("[1] Fazer Login")
             print("[2] Cadastrar Novo Usuário")
             print("[3] Rolar Dados (livre)")
+            print("[4] Bestiário (Ameaças Paranormais)")
             print("[0] Sair do Sistema")
 
         opcao = input("\nOpção: ").strip()
@@ -1331,6 +1378,8 @@ def menu():
             elif opcao == "5": fazer_login()
             elif opcao == "6": deslogar_usuario()
             elif opcao == "7": menu_rolagem_dados(usuario_logado)
+            elif opcao == "8": menu_campanhas(usuario_logado, exibir_ficha)
+            elif opcao == "9": menu_ameacas()
             elif opcao == "0":
                 print("Desconectando da Ordo Realitas... Até logo!")
                 break
@@ -1340,6 +1389,7 @@ def menu():
             if opcao == "1": fazer_login()
             elif opcao == "2": cadastrar_usuario()
             elif opcao == "3": menu_rolagem_dados()
+            elif opcao == "4": menu_ameacas()
             elif opcao == "0":
                 print("Desconectando da Ordo Realitas... Até logo!")
                 break
